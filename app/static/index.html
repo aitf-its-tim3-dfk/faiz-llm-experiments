@@ -15,32 +15,34 @@
   </head>
   <body>
 
-    <!-- Search Section -->
+    <!-- Moderation Search Section -->
     <div class="search-wrapper" id="searchWrapper">
       <div class="logo" id="logo">
         <h1>Queeree<span class="dot"></span></h1>
-        <p class="subtitle">ask anything, get answers ✨</p>
+        <p class="subtitle">content moderation & fact-checking ✨</p>
       </div>
 
       <div class="search-container">
-        <div class="search-bar">
-          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-          </svg>
-          <input
-            type="text"
+        <div class="input-panel">
+          <textarea
             id="searchInput"
-            placeholder="What do you want to know?"
+            placeholder="Paste content here to analyze for moderation guidelines..."
             autocomplete="off"
-          />
-          <button class="search-btn" id="searchBtn">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-              <polyline points="12 5 19 12 12 19"></polyline>
-            </svg>
-            Ask
-          </button>
+            rows="4"
+          ></textarea>
+          <div class="input-actions">
+            <!-- Upload placeholder button for UI parity -->
+            <button class="icon-btn tooltip" data-tooltip="Upload Media (Coming soon)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+            </button>
+            <button class="search-btn" id="searchBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+              Analyze
+            </button>
+          </div>
         </div>
         <div class="loading-bar-track" id="loadingBar">
           <div class="loading-bar-fill"></div>
@@ -49,7 +51,15 @@
     </div>
 
     <!-- Result Section -->
-    <div class="result-area" id="resultArea"></div>
+    <div class="result-area" id="resultArea" style="display: none;">
+      <!-- Progress Stepper -->
+      <div class="progress-stepper" id="progressStepper">
+         <div class="step-text" id="statusMessage">Menunggu...</div>
+      </div>
+      
+      <!-- Dynamic results will be injected here -->
+      <div id="resultContent"></div>
+    </div>
 
     <div class="footer" id="footer" style="display: none;">
       powered by <a href="https://openrouter.ai" target="_blank">OpenRouter</a> &amp; Sanic

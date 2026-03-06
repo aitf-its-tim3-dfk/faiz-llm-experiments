@@ -1,8 +1,11 @@
 import os
+import json
+import asyncio
 from sanic import Sanic
-from sanic.response import json, file
+from sanic.response import json as json_response, file
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
+from pipeline import analyze_content, search_queue
 
 # Load environment variables from .env file
 load_dotenv()
@@ -19,40 +22,56 @@ client = AsyncOpenAI(
     api_key=os.environ.get("OPENROUTER_API_KEY", "dummy-key-if-not-set"),
 )
 
+
+@app.before_server_start
+async def setup(app, loop):
+    """Initialize background tasks like the search queue."""
+    await search_queue.start()
+
+
+@app.after_server_stop
+async def teardown(app, loop):
+    """Clean up background tasks on shutdown."""
+    await search_queue.stop()
+
+
 @app.route("/")
 async def index(request):
     """Serves the main frontend UI."""
     return await file("./static/index.html")
 
-@app.post("/api/query")
-async def handle_query(request):
-    """Receives user query from UI, sends to OpenRouter, and returns response."""
+
+@app.post("/api/analyze")
+async def analyze_endpoint(request):
+    """Receives content from UI, runs the moderation pipeline, and streams back progress."""
+    data = request.json
+    content = data.get("content")
+
+    if not content:
+        return json_response({"error": "Content is required"}, status=400)
+
+    res = await request.respond(content_type="text/event-stream")
+
+    async def progress_callback(progress_data):
+        try:
+            await res.send(
+                f"data: {json.dumps({'type': 'progress', 'data': progress_data})}\n\n"
+            )
+        except BaseException:
+            pass  # Connection likely dropped
+
     try:
-        data = request.json
-        user_query = data.get("query")
-        
-        if not user_query:
-            return json({"error": "Query is required"}, status=400)
-        
-        # Call the OpenRouter API
-        # By default we use 'openrouter/auto', but you can change this to any supported model,
-        # e.g., 'anthropic/claude-3-haiku', 'google/gemini-2.5-pro', or 'meta-llama/llama-3-8b-instruct'
-        response = await client.chat.completions.create(
-            model="openrouter/auto",
-            messages=[
-                {"role": "user", "content": user_query}
-            ],
-            extra_headers={
-                "HTTP-Referer": "http://localhost:8000", # Optional, for OpenRouter analytics
-                "X-Title": "Sanic API App", # Optional, for OpenRouter analytics
-            }
+        final_result = await analyze_content(
+            client, content, emit_progress=progress_callback
         )
-        
-        reply = response.choices[0].message.content
-        return json({"response": reply, "success": True})
-        
+        await res.send(
+            f"data: {json.dumps({'type': 'result', 'data': final_result})}\n\n"
+        )
     except Exception as e:
-        return json({"error": str(e), "success": False}, status=500)
+        await res.send(f"data: {json.dumps({'type': 'error', 'data': str(e)})}\n\n")
+
+    await res.eof()
+
 
 if __name__ == "__main__":
     # Run the Sanic app locally
