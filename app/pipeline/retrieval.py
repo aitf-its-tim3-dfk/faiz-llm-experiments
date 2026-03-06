@@ -29,19 +29,30 @@ class RetrievalQueue:
         return await future
 
     async def _worker(self):
-        """Process queries sequentially to avoid rate-limiting."""
+        """Process queries in batches of up to 3 to improve throughput without excessive rate-limiting."""
         async with httpx.AsyncClient(timeout=30.0) as client:
             while True:
-                query, future = await self._queue.get()
-                try:
-                    results = await self._perform_search(client, query)
-                    future.set_result(results)
-                except Exception as e:
-                    future.set_exception(e)
-                finally:
-                    self._queue.task_done()
-                    # Small delay between requests
-                    await asyncio.sleep(1)
+                # Wait for at least one item
+                batch = [await self._queue.get()]
+
+                # Try to get up to 2 more items immediately if available
+                while len(batch) < 3 and not self._queue.empty():
+                    batch.append(self._queue.get_nowait())
+
+                async def process_item(item):
+                    query, future = item
+                    try:
+                        results = await self._perform_search(client, query)
+                        future.set_result(results)
+                    except Exception as e:
+                        future.set_exception(e)
+                    finally:
+                        self._queue.task_done()
+
+                await asyncio.gather(*(process_item(item) for item in batch))
+
+                # Small delay between batches to respect rate limits
+                await asyncio.sleep(1)
 
     async def _perform_search(
         self, client: httpx.AsyncClient, query: str

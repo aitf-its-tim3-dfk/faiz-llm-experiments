@@ -67,6 +67,15 @@ async def analyze_content(
             )
             result["laws_summary"] = laws_summary
             result["fact_check"] = fc_result
+
+            # Fallback to Misinformasi if we can't verify (counterfactuals not found)
+            if fc_result and fc_result.get("verified") is None:
+                categories = [
+                    c for c in categories if c not in ("Hoaks", "Disinformasi")
+                ]
+                if "Misinformasi" not in categories:
+                    categories.append("Misinformasi")
+                result["categories"] = categories
         else:
             # Only await laws
             laws_summary = await task_laws

@@ -23,7 +23,23 @@ async def _check_sufficiency_single(
                     "content": f"Claim:\n{content}\n\nSearch Results:\n{results_context}",
                 },
             ],
-            response_format={"type": "json_object"} if False else None,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "sufficiency_check",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "sufficient": {"type": "boolean"},
+                            "verified": {"type": ["boolean", "null"]},
+                            "reasoning": {"type": "string"},
+                        },
+                        "required": ["sufficient", "verified", "reasoning"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
             temperature=0.7,
         )
         reply = response.choices[0].message.content.strip()

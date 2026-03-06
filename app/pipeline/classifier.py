@@ -4,7 +4,7 @@ from typing import List
 from openai import AsyncOpenAI
 from .prompts import CLASSIFY_PROMPT
 
-MODEL_NAME = "qwen/qwen3.5-27b"
+MODEL_NAME = "qwen/qwen3.5-35b-a3b"
 N_SAMPLES = 3
 
 
@@ -16,9 +16,21 @@ async def _classify_single(client: AsyncOpenAI, content: str) -> List[str]:
                 {"role": "system", "content": CLASSIFY_PROMPT},
                 {"role": "user", "content": content},
             ],
-            response_format=(
-                {"type": "json_object"} if False else None
-            ),  # Some models don't support json_object natively via openrouter, we'll ask it to just output json
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "classification_result",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "categories": {"type": "array", "items": {"type": "string"}}
+                        },
+                        "required": ["categories"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
             temperature=0.7,  # Slight randomness for self-consistency
         )
 
@@ -70,6 +82,7 @@ async def classify_content(client: AsyncOpenAI, content: str) -> List[str]:
         "Pelanggaran Keamanan Informasi",
         "Kekerasan",
         "Penistaan Agama",
+        "Misinformasi",
     }
 
     return [c for c in final_categories if c in allowed]

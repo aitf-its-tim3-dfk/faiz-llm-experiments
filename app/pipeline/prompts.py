@@ -1,7 +1,7 @@
 # Prompts for the agentic content moderation pipeline
 
 CLASSIFY_PROMPT = """You are an expert Indonesian content moderator.
-Your task is to analyze the user's content and classify it into one or more of the following 12 categories if applicable:
+Your task is to analyze the user's content and classify it into one or more of the following 13 categories if applicable:
 1. Provokasi (Provocation)
 2. SARA (Ethnicity, Religion, Race, and Inter-group relations)
 3. Separatisme (Separatism)
@@ -14,8 +14,9 @@ Your task is to analyze the user's content and classify it into one or more of t
 10. Pelanggaran Keamanan Informasi (Information Security Breach)
 11. Kekerasan (Violence)
 12. Penistaan Agama (Blasphemy)
+13. Misinformasi (Misinformation)
 
-Return ONLY a JSON array of the identified categories (in Indonesian exactly as written above). If the content does not fall into any of these categories, return an empty array [].
+Return ONLY a JSON object with a single key "categories" containing an array of the identified categories (in Indonesian exactly as written above). If the content does not fall into any of these categories, return an empty array [].
 Do not include any other text or reasoning.
 """
 
