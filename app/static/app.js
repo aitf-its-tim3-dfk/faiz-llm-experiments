@@ -111,6 +111,67 @@ function renderFinalResult(data) {
   header.appendChild(badgesContainer);
   card.appendChild(header);
 
+  // Analyzed Text Section with Highlights
+  const contentInput = document.getElementById("searchInput").value.trim();
+  if (contentInput && data.law_analysis && data.law_analysis.length > 0) {
+    const title = document.createElement("div");
+    title.className = "result-section-title";
+    title.textContent = "Sorotan Bukti Teks";
+    card.appendChild(title);
+
+    // Aggregate all segments
+    let allSegments = [];
+    data.law_analysis.forEach(law => {
+      if (law.segments) {
+        law.segments.forEach(seg => {
+          allSegments.push({
+            start: seg.start,
+            end: seg.end,
+            score: seg.score,
+            reason: seg.reason,
+            pasal: law.pasal
+          });
+        });
+      }
+    });
+
+    const textPanel = document.createElement("div");
+    textPanel.className = "analyzed-text-panel";
+
+    if (allSegments.length === 0) {
+      textPanel.textContent = contentInput;
+    } else {
+      // Create non-overlapping boundaries
+      let boundaries = new Set([0, contentInput.length]);
+      allSegments.forEach(seg => {
+        boundaries.add(seg.start);
+        boundaries.add(seg.end);
+      });
+      let sortedBounds = Array.from(boundaries).sort((a,b) => a-b);
+      
+      let html = "";
+      for (let i = 0; i < sortedBounds.length - 1; i++) {
+        let spanStart = sortedBounds[i];
+        let spanEnd = sortedBounds[i+1];
+        let textChunk = contentInput.substring(spanStart, spanEnd);
+        
+        // Find segments covering this chunk
+        let coveringSegs = allSegments.filter(s => s.start <= spanStart && s.end >= spanEnd);
+        if (coveringSegs.length > 0) {
+          // Take the highest score
+          let maxScore = Math.max(...coveringSegs.map(s => s.score));
+          let bestSeg = coveringSegs.find(s => s.score === maxScore);
+          let tooltip = `Pasal: ${bestSeg.pasal}\nCertainty: ${bestSeg.score}/N\nReason: ${bestSeg.reason}`;
+          html += `<span class="highlight-segment" data-score="${maxScore}" data-law-tooltip="${escapeHtml(tooltip)}">${escapeHtml(textChunk)}</span>`;
+        } else {
+          html += escapeHtml(textChunk);
+        }
+      }
+      textPanel.innerHTML = html;
+    }
+    card.appendChild(textPanel);
+  }
+
   // Laws Section (If any)
   if (data.laws_summary) {
     const title = document.createElement("div");
@@ -120,7 +181,30 @@ function renderFinalResult(data) {
 
     const panel = document.createElement("div");
     panel.className = "laws-panel";
-    panel.innerHTML = processMarkdown(data.laws_summary);
+    
+    // Check if we have detailed law_analysis
+    if (data.law_analysis && data.law_analysis.length > 0) {
+      data.law_analysis.forEach(law => {
+        const item = document.createElement("div");
+        item.className = "law-analysis-item";
+        
+        let htmlContext = `<h4>${escapeHtml(law.pasal)}</h4>`;
+        htmlContext += `<p class="overall-reason">${escapeHtml(law.overall_reason || "")}</p>`;
+        
+        if (law.clustered_reason_counts && Object.keys(law.clustered_reason_counts).length > 0) {
+          htmlContext += `<ul class="image-reasons-list">`;
+          Object.entries(law.clustered_reason_counts).forEach(([r, count]) => {
+             htmlContext += `<li>${escapeHtml(r)} <strong>(votes: ${count})</strong></li>`;
+          });
+          htmlContext += `</ul>`;
+        }
+        item.innerHTML = htmlContext;
+        panel.appendChild(item);
+      });
+    } else {
+      panel.innerHTML = processMarkdown(data.laws_summary);
+    }
+    
     card.appendChild(panel);
   }
 

@@ -8,12 +8,13 @@ GLOBAL_MODEL_NAME = "qwen/qwen3.5-35b-a3b"
 
 DEFAULT_CONFIG = {
     "classifier_model_name": GLOBAL_MODEL_NAME,
-    "fact_checker_model_name": "qwen/qwen3.5-27b",
+    "fact_checker_model_name": GLOBAL_MODEL_NAME,
     "law_retriever_model_name": GLOBAL_MODEL_NAME,
     "embedding_model_name": "perplexity-ai/pplx-embed-v1-0.6B",
     "classifier_n_samples": 3,
     "fact_checker_n_samples": 3,
     "fact_checker_max_loops": 3,
+    "max_completion_tokens": 1024,
 }
 
 
@@ -27,6 +28,7 @@ class PipelineConfig(BaseModel):
     classifier_n_samples: Optional[int] = None
     fact_checker_n_samples: Optional[int] = None
     fact_checker_max_loops: Optional[int] = None
+    max_completion_tokens: Optional[int] = None
 
 
 # state for the current async context only
@@ -87,3 +89,8 @@ def FACT_CHECKER_N_SAMPLES():
 @property
 def FACT_CHECKER_MAX_LOOPS():
     return get_config_val("fact_checker_max_loops")
+
+
+@property
+def MAX_COMPLETION_TOKENS():
+    return get_config_val("max_completion_tokens")

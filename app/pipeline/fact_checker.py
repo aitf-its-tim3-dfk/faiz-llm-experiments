@@ -10,49 +10,52 @@ import config
 async def _check_sufficiency_single(
     client: AsyncOpenAI, content: str, results_context: str
 ) -> Dict[str, Any]:
-    try:
-        response = await client.chat.completions.create(
-            model=config.get_config_val("fact_checker_model_name"),
-            messages=[
-                {"role": "system", "content": SUFFICIENCY_PROMPT},
-                {
-                    "role": "user",
-                    "content": f"Claim:\n{content}\n\nSearch Results:\n{results_context}",
-                },
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "sufficiency_check",
-                    "strict": True,
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "sufficient": {"type": "boolean"},
-                            "verified": {"type": ["boolean", "null"]},
-                            "reasoning": {"type": "string"},
+    for attempt in range(3):
+        try:
+            response = await client.chat.completions.create(
+                model=config.get_config_val("fact_checker_model_name"),
+                messages=[
+                    {"role": "system", "content": SUFFICIENCY_PROMPT},
+                    {
+                        "role": "user",
+                        "content": f"Claim:\n{content}\n\nSearch Results:\n{results_context}",
+                    },
+                ],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "sufficiency_check",
+                        "strict": True,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "sufficient": {"type": "boolean"},
+                                "verified": {"type": ["boolean", "null"]},
+                                "reasoning": {"type": "string"},
+                            },
+                            "required": ["sufficient", "verified", "reasoning"],
+                            "additionalProperties": False,
                         },
-                        "required": ["sufficient", "verified", "reasoning"],
-                        "additionalProperties": False,
                     },
                 },
-            },
-            temperature=0.7,
-        )
-        reply = response.choices[0].message.content.strip()
-        if reply.startswith("```json"):
-            reply = reply[7:-3].strip()
-        elif reply.startswith("```"):
-            reply = reply[3:-3].strip()
-
-        return json.loads(reply)
-    except Exception as e:
-        print(f"Sufficiency check error: {e}")
-        return {
-            "sufficient": False,
-            "verified": None,
-            "reasoning": "Error in LLM evaluation",
-        }
+                temperature=0.7,
+                max_completion_tokens=config.get_config_val("max_completion_tokens"),
+            )
+            content_str = response.choices[0].message.content
+            if content_str is None:
+                raise ValueError("Model returned None content")
+                
+            reply = content_str.strip()
+            return json.loads(reply)
+        except Exception as e:
+            print(f"Sufficiency check attempt {attempt+1} error: {e}")
+            if attempt == 2:
+                return {
+                    "sufficient": False,
+                    "verified": None,
+                    "reasoning": "Error in LLM evaluation",
+                }
+            await asyncio.sleep(1)
 
 
 async def check_sufficiency(
@@ -91,33 +94,41 @@ async def check_sufficiency(
 
 
 async def generate_query(client: AsyncOpenAI, prompt: str, content: str) -> str:
-    try:
-        res = await client.chat.completions.create(
-            model=config.get_config_val("fact_checker_model_name"),
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": content},
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "search_query",
-                    "strict": True,
-                    "schema": {
-                        "type": "object",
-                        "properties": {"query": {"type": "string"}},
-                        "required": ["query"],
-                        "additionalProperties": False,
+    for attempt in range(3):
+        try:
+            res = await client.chat.completions.create(
+                model=config.get_config_val("fact_checker_model_name"),
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": content},
+                ],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "search_query",
+                        "strict": True,
+                        "schema": {
+                            "type": "object",
+                            "properties": {"query": {"type": "string"}},
+                            "required": ["query"],
+                            "additionalProperties": False,
+                        },
                     },
                 },
-            },
-            temperature=0.3,
-        )
-        data = json.loads(res.choices[0].message.content)
-        return data.get("query", "hoaks indonesia")
-    except Exception as e:
-        print(f"Query generation error: {e}")
-        return "hoaks indonesia"
+                temperature=0.3,
+                max_completion_tokens=config.get_config_val("max_completion_tokens"),
+            )
+            content_str = res.choices[0].message.content
+            if content_str is None:
+                raise ValueError("Model returned None content")
+                
+            data = json.loads(content_str.strip())
+            return data.get("query", "hoaks indonesia")
+        except Exception as e:
+            print(f"Query generation attempt {attempt+1} error: {e}")
+            if attempt == 2:
+                return "hoaks indonesia"
+            await asyncio.sleep(1)
 
 
 async def fact_check(

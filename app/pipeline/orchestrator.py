@@ -1,5 +1,6 @@
 from openai import AsyncOpenAI
 import json
+import asyncio
 from typing import Dict, Any, Callable
 
 # Import pipeline components
@@ -53,9 +54,28 @@ async def analyze_content(
                 }
             )
 
-        task_laws = retrieve_laws(
-            client, content, categories, emit_progress=emit_progress
-        )
+        async def process_laws():
+            laws_data = await retrieve_laws(
+                client, content, categories, emit_progress=emit_progress
+            )
+            summary = laws_data.get("summary", "")
+            articles = laws_data.get("articles", [])
+            
+            analyzed_laws = []
+            if articles:
+                if image_data:
+                    from .law_analyzer import analyze_image_laws
+                    analyzed_laws = await analyze_image_laws(client, content, image_data, articles, emit_progress)
+                else:
+                    from .law_analyzer import analyze_text_laws
+                    analyzed_laws = await analyze_text_laws(client, content, articles, emit_progress)
+                    
+            return {
+                "summary": summary,
+                "analysis": analyzed_laws
+            }
+
+        task_laws = asyncio.create_task(process_laws())
 
         # Only fact-check if Disinformasi or Hoaks
         needs_fact_check = "Disinformasi" in categories or "Hoaks" in categories
@@ -69,9 +89,10 @@ async def analyze_content(
             task_fact = fact_check(client, content, search_queue, fc_progress)
 
             fc_result = await task_fact
-            laws_summary = await task_laws
+            laws_result = await task_laws
 
-            result["laws_summary"] = laws_summary
+            result["laws_summary"] = laws_result["summary"]
+            result["law_analysis"] = laws_result["analysis"]
             result["fact_check"] = fc_result
 
             # Fallback to Misinformasi if we can't verify (counterfactuals not found)
@@ -84,8 +105,9 @@ async def analyze_content(
                 result["categories"] = categories
         else:
             # Only await laws
-            laws_summary = await task_laws
-            result["laws_summary"] = laws_summary
+            laws_result = await task_laws
+            result["laws_summary"] = laws_result["summary"]
+            result["law_analysis"] = laws_result["analysis"]
 
         if emit_progress:
             await emit_progress({"stage": "done", "message": "Analisis selesai."})

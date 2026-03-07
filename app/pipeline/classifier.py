@@ -6,49 +6,58 @@ from openai import AsyncOpenAI
 from .prompts import CLASSIFY_PROMPT
 import config
 
+
 async def _classify_single(
     client: AsyncOpenAI, content: str, image_data: Optional[Dict] = None
 ) -> List[str]:
-    try:
-        user_message_content = [{"type": "text", "text": content}]
-        if image_data:
-            # Construct base64 data URI
-            b64_image = base64.b64encode(image_data["bytes"]).decode("utf-8")
-            data_uri = f"data:{image_data['mime_type']};base64,{b64_image}"
-            user_message_content.append(
-                {"type": "image_url", "image_url": {"url": data_uri}}
-            )
-
-        response = await client.chat.completions.create(
-            model=config.get_config_val("classifier_model_name"),
-            messages=[
-                {"role": "system", "content": CLASSIFY_PROMPT},
-                {"role": "user", "content": user_message_content},
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "classification_result",
-                    "strict": True,
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "categories": {"type": "array", "items": {"type": "string"}}
-                        },
-                        "required": ["categories"],
-                        "additionalProperties": False,
-                    },
-                },
-            },
-            temperature=0.7,
+    user_message_content = [{"type": "text", "text": content}]
+    if image_data:
+        # Construct base64 data URI
+        b64_image = base64.b64encode(image_data["bytes"]).decode("utf-8")
+        data_uri = f"data:{image_data['mime_type']};base64,{b64_image}"
+        user_message_content.append(
+            {"type": "image_url", "image_url": {"url": data_uri}}
         )
 
-        reply = response.choices[0].message.content.strip()
-        data = json.loads(reply)
-        return data.get("categories", [])
-    except Exception as e:
-        print(f"Classification error: {e}")
-        return []
+    for attempt in range(3):
+        try:
+            response = await client.chat.completions.create(
+                model=config.get_config_val("classifier_model_name"),
+                messages=[
+                    {"role": "system", "content": CLASSIFY_PROMPT},
+                    {"role": "user", "content": user_message_content},
+                ],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "classification_result",
+                        "strict": True,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "categories": {"type": "array", "items": {"type": "string"}}
+                            },
+                            "required": ["categories"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+                temperature=0.7,
+                max_completion_tokens=config.get_config_val("max_completion_tokens"),
+            )
+
+            content_str = response.choices[0].message.content
+            if content_str is None:
+                raise ValueError("Model returned None content")
+            
+            reply = content_str.strip()
+            data = json.loads(reply)
+            return data.get("categories", [])
+        except Exception as e:
+            print(f"Classification attempt {attempt+1} error: {e}")
+            if attempt == 2:
+                return []
+            await asyncio.sleep(1)
 
 
 async def classify_content(
@@ -112,4 +121,3 @@ async def classify_content(
     }
 
     return [c for c in final_categories if c in allowed]
-

@@ -4,9 +4,11 @@ import numpy as np
 import hnswlib
 from openai import AsyncOpenAI
 from sentence_transformers import SentenceTransformer
-
+from typing import Dict, Any
+import asyncio
 from .prompts import LAW_QUERY_PROMPT, LAW_SUMMARY_PROMPT
 import config
+
 
 class LocalLawRetriever:
     def __init__(self, data_dir="data"):
@@ -24,7 +26,9 @@ class LocalLawRetriever:
             return
 
         print("Loading local law index...")
-        self.embed_model = SentenceTransformer(config.get_config_val("embedding_model_name"), trust_remote_code=True)
+        self.embed_model = SentenceTransformer(
+            config.get_config_val("embedding_model_name"), trust_remote_code=True
+        )
 
         with open(
             os.path.join(self.data_dir, "law_metadata.json"), "r", encoding="utf-8"
@@ -94,10 +98,10 @@ async def retrieve_laws(
     content: str,
     categories: list[str],
     emit_progress=None,
-) -> str:
-    """Finds and formats relevant Indonesian laws using local hnswlib index, returning a Markdown string."""
+) -> Dict[str, Any]:
+    """Finds and formats relevant Indonesian laws using local hnswlib index, returning a dict with summary and articles."""
     if not categories:
-        return ""
+        return {"summary": "", "articles": []}
 
     cats_str = ", ".join(categories)
 
@@ -107,36 +111,44 @@ async def retrieve_laws(
             {"stage": "law_retrieval", "message": "Menyiapkan kueri pencarian pasal..."}
         )
 
-    try:
-        res = await client.chat.completions.create(
-            model=config.get_config_val("law_retriever_model_name"),
-            messages=[
-                {"role": "system", "content": LAW_QUERY_PROMPT},
-                {
-                    "role": "user",
-                    "content": f"Categories: {cats_str}\n\nContent snippet: {content[:500]}",
-                },
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "law_query",
-                    "strict": True,
-                    "schema": {
-                        "type": "object",
-                        "properties": {"query": {"type": "string"}},
-                        "required": ["query"],
-                        "additionalProperties": False,
+    for attempt in range(3):
+        try:
+            res = await client.chat.completions.create(
+                model=config.get_config_val("law_retriever_model_name"),
+                messages=[
+                    {"role": "system", "content": LAW_QUERY_PROMPT},
+                    {
+                        "role": "user",
+                        "content": f"Categories: {cats_str}\n\nContent snippet: {content[:500]}",
+                    },
+                ],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "law_query",
+                        "strict": True,
+                        "schema": {
+                            "type": "object",
+                            "properties": {"query": {"type": "string"}},
+                            "required": ["query"],
+                            "additionalProperties": False,
+                        },
                     },
                 },
-            },
-            temperature=0.1,
-        )
-        data = json.loads(res.choices[0].message.content)
-        query = data.get("query", cats_str)
-    except Exception as e:
-        print(f"Law query generation error: {e}")
-        query = cats_str  # Fallback to categories
+                temperature=0.1,
+                max_completion_tokens=config.get_config_val("max_completion_tokens"),
+            )
+            content_str = res.choices[0].message.content
+            if content_str is None:
+                raise ValueError("Model returned None content")
+            data = json.loads(content_str.strip())
+            query = data.get("query", cats_str)
+            break
+        except Exception as e:
+            print(f"Law query generation attempt {attempt+1} error: {e}")
+            if attempt == 2:
+                query = cats_str  # Fallback to categories
+            await asyncio.sleep(1)
 
     # 2. Run retrieval
     if emit_progress:
@@ -151,7 +163,10 @@ async def retrieve_laws(
         return "Gagal mencari pasal (Local index error)."
 
     if not results:
-        return f"*(Dicari: {query})*\nTidak ditemukan pasal hukum secara spesifik."
+        return {
+            "summary": f"*(Dicari: {query})*\nTidak ditemukan pasal hukum secara spesifik.",
+            "articles": [],
+        }
 
     if emit_progress:
         await emit_progress(
@@ -164,48 +179,57 @@ async def retrieve_laws(
     # 3. Format raw results into readable text
     search_context = "\n".join([f"- {r['pasal']}: {r['description']}" for r in results])
 
-    try:
-        final_res = await client.chat.completions.create(
-            model=config.get_config_val("law_retriever_model_name"),
-            messages=[
-                {"role": "system", "content": LAW_SUMMARY_PROMPT},
-                {
-                    "role": "user",
-                    "content": f"Categories: {cats_str}\n\nSearch Results:\n{search_context}",
-                },
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "law_summary",
-                    "strict": True,
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "summary": {"type": "string"},
-                            "articles": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "pasal": {"type": "string"},
-                                        "description": {"type": "string"},
+    for attempt in range(3):
+        try:
+            final_res = await client.chat.completions.create(
+                model=config.get_config_val("law_retriever_model_name"),
+                messages=[
+                    {"role": "system", "content": LAW_SUMMARY_PROMPT},
+                    {
+                        "role": "user",
+                        "content": f"Categories: {cats_str}\n\nSearch Results:\n{search_context}",
+                    },
+                ],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "law_summary",
+                        "strict": True,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "summary": {"type": "string"},
+                                "articles": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "pasal": {"type": "string"},
+                                            "description": {"type": "string"},
+                                        },
+                                        "required": ["pasal", "description"],
+                                        "additionalProperties": False,
                                     },
-                                    "required": ["pasal", "description"],
-                                    "additionalProperties": False,
                                 },
                             },
+                            "required": ["summary", "articles"],
+                            "additionalProperties": False,
                         },
-                        "required": ["summary", "articles"],
-                        "additionalProperties": False,
                     },
                 },
-            },
-            temperature=0.2,
-        )
-        summary_data = json.loads(final_res.choices[0].message.content)
-        return summary_data.get("summary", "")
-    except Exception as e:
-        print(f"Law summarization error: {e}")
-        return "Gagal merangkum hukum (Error in LLM)."
-
+                temperature=0.2,
+                max_completion_tokens=config.get_config_val("max_completion_tokens"),
+            )
+            content_str = final_res.choices[0].message.content
+            if content_str is None:
+                raise ValueError("Model returned None content")
+            summary_data = json.loads(content_str.strip())
+            return summary_data
+        except Exception as e:
+            print(f"Law summarization attempt {attempt+1} error: {e}")
+            if attempt == 2:
+                return {
+                    "summary": "Gagal merangkum hukum (Error in LLM).",
+                    "articles": [],
+                }
+            await asyncio.sleep(1)
