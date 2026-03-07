@@ -4,10 +4,7 @@ from typing import Dict, Any, List
 from openai import AsyncOpenAI
 from .prompts import FACT_CHECK_QUERY_PROMPT, SUFFICIENCY_PROMPT, REFINED_QUERY_PROMPT
 from .retrieval import RetrievalQueue
-
-MODEL_NAME = "qwen/qwen3.5-27b"
-N_SAMPLES = 3
-MAX_LOOPS = 3
+import config
 
 
 async def _check_sufficiency_single(
@@ -15,7 +12,7 @@ async def _check_sufficiency_single(
 ) -> Dict[str, Any]:
     try:
         response = await client.chat.completions.create(
-            model=MODEL_NAME,
+            model=config.get_config_val("fact_checker_model_name"),
             messages=[
                 {"role": "system", "content": SUFFICIENCY_PROMPT},
                 {
@@ -62,15 +59,16 @@ async def check_sufficiency(
     client: AsyncOpenAI, content: str, results_context: str
 ) -> Dict[str, Any]:
     """Run N=3 self-consistency check on whether the retrieved evidence is sufficient to debunk/verify."""
+    n_samples = config.get_config_val("fact_checker_n_samples")
     tasks = [
         _check_sufficiency_single(client, content, results_context)
-        for _ in range(N_SAMPLES)
+        for _ in range(n_samples)
     ]
     evals = await asyncio.gather(*tasks)
 
     # Majority vote
     sufficient_votes = sum(1 for e in evals if e.get("sufficient") is True)
-    if sufficient_votes >= (N_SAMPLES // 2 + 1):
+    if sufficient_votes >= (n_samples // 2 + 1):
         # We have sufficiency. Take the majority verifiable state
         verified_votes = sum(1 for e in evals if e.get("verified") is True)
         unverified_votes = sum(1 for e in evals if e.get("verified") is False)
@@ -95,7 +93,7 @@ async def check_sufficiency(
 async def generate_query(client: AsyncOpenAI, prompt: str, content: str) -> str:
     try:
         res = await client.chat.completions.create(
-            model=MODEL_NAME,
+            model=config.get_config_val("fact_checker_model_name"),
             messages=[
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": content},
@@ -135,10 +133,11 @@ async def fact_check(
 
     query = await generate_query(client, FACT_CHECK_QUERY_PROMPT, content)
 
-    for loop in range(MAX_LOOPS):
+    max_loops = config.get_config_val("fact_checker_max_loops")
+    for loop in range(max_loops):
         if emit_progress:
             await emit_progress(
-                f"Iterasi {loop+1}/{MAX_LOOPS}: Mencari '{query}'..."
+                f"Iterasi {loop+1}/{max_loops}: Mencari '{query}'..."
             )
 
         try:
@@ -185,7 +184,7 @@ async def fact_check(
             }
 
         # Not sufficient, refine the query
-        if loop < MAX_LOOPS - 1:
+        if loop < max_loops - 1:
             if emit_progress:
                 await emit_progress(
                     f"Bukti belum cukup (Iterasi {loop+1}). Menyaring kueri..."

@@ -1,6 +1,9 @@
 import httpx
 import json
 import asyncio
+import subprocess
+import time
+import sys
 
 
 async def test():
@@ -9,11 +12,20 @@ async def test():
         content = "Ini berita hoaks! Uang Rp 100 ribu di dalamnya ada microchip yang bisa melacak kita!"
         print(f"Testing point /api/analyze (Multipart) with content:\n{content}\n")
 
-        # Test with just text (multipart)
+        # Test with just text (multipart) and a custom config abstraction 
+        # (e.g. fewer fact-check loops for a faster ablation test)
+        custom_config = {
+            "fact_checker_max_loops": 1, 
+            "classifier_model_name": "qwen/qwen3.5-35b-a3b"
+        }
+        
         async with client.stream(
             "POST",
             "http://127.0.0.1:8000/api/analyze",
-            data={"content": content},
+            data={
+                "content": content,
+                "config": json.dumps(custom_config)
+            },
         ) as response:
             async for line in response.aiter_lines():
                 if line.startswith("data: "):
@@ -33,5 +45,34 @@ async def test():
 
 
 if __name__ == "__main__":
-    asyncio.run(test())
+    print("Starting Sanic server in the background...")
+    # Start the server using the active Python environment
+    server_process = subprocess.Popen(
+        [sys.executable, "main.py"],
+        cwd="c:/Users/kek/projects/faiz-llm-experiments/app"
+    )
+    
+    try:
+        print("Waiting for server to become ready...")
+        # Poll the server until it's ready
+        max_retries = 30
+        for i in range(max_retries):
+            try:
+                # Just hit the root endpoint to check if it's up
+                httpx.get("http://127.0.0.1:8000/", timeout=1.0)
+                print("Server is up!")
+                break
+            except httpx.RequestError:
+                time.sleep(2)
+        else:
+            print("Server failed to start within the timeout.")
+            server_process.terminate()
+            exit(1)
+
+        print("\n--- Running Tests ---")
+        asyncio.run(test())
+    finally:
+        print("\nStopping Sanic server...")
+        server_process.terminate()
+        server_process.wait()
 

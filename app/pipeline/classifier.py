@@ -4,10 +4,7 @@ import base64
 from typing import List, Dict, Optional, Callable
 from openai import AsyncOpenAI
 from .prompts import CLASSIFY_PROMPT
-
-MODEL_NAME = "qwen/qwen3.5-35b-a3b"
-N_SAMPLES = 3
-
+import config
 
 async def _classify_single(
     client: AsyncOpenAI, content: str, image_data: Optional[Dict] = None
@@ -23,7 +20,7 @@ async def _classify_single(
             )
 
         response = await client.chat.completions.create(
-            model=MODEL_NAME,
+            model=config.get_config_val("classifier_model_name"),
             messages=[
                 {"role": "system", "content": CLASSIFY_PROMPT},
                 {"role": "user", "content": user_message_content},
@@ -65,7 +62,8 @@ async def classify_content(
 
     # Run sequentially or in parallel? If we want verbose progress per vote, sequential might be better
     # but gather is faster. Let's do gather and update progress as they finish.
-    tasks = [_classify_single(client, content, image_data) for _ in range(N_SAMPLES)]
+    n_samples = config.get_config_val("classifier_n_samples")
+    tasks = [_classify_single(client, content, image_data) for _ in range(n_samples)]
 
     if emit_progress:
         # We can wrap tasks to report progress as they finish
@@ -78,7 +76,7 @@ async def classify_content(
             await emit_progress(
                 {
                     "stage": "classifying",
-                    "message": f"Klasifikasi vote {completed_count}/{N_SAMPLES} selesai...",
+                    "message": f"Klasifikasi vote {completed_count}/{n_samples} selesai...",
                 }
             )
             return res
@@ -92,7 +90,7 @@ async def classify_content(
         for cat in set(res):
             category_counts[cat] = category_counts.get(cat, 0) + 1
 
-    threshold = N_SAMPLES // 2 + 1
+    threshold = n_samples // 2 + 1
     final_categories = [
         cat for cat, count in category_counts.items() if count >= threshold
     ]

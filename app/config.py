@@ -1,0 +1,89 @@
+import os
+from contextvars import ContextVar
+from pydantic import BaseModel
+from typing import Optional
+
+# Base Configuration
+GLOBAL_MODEL_NAME = "qwen/qwen3.5-35b-a3b"
+
+DEFAULT_CONFIG = {
+    "classifier_model_name": GLOBAL_MODEL_NAME,
+    "fact_checker_model_name": "qwen/qwen3.5-27b",
+    "law_retriever_model_name": GLOBAL_MODEL_NAME,
+    "embedding_model_name": "perplexity-ai/pplx-embed-v1-0.6B",
+    "classifier_n_samples": 3,
+    "fact_checker_n_samples": 3,
+    "fact_checker_max_loops": 3,
+}
+
+
+# Request-scoped Configuration
+class PipelineConfig(BaseModel):
+    classifier_model_name: Optional[str] = None
+    fact_checker_model_name: Optional[str] = None
+    law_retriever_model_name: Optional[str] = None
+    embedding_model_name: Optional[str] = None
+
+    classifier_n_samples: Optional[int] = None
+    fact_checker_n_samples: Optional[int] = None
+    fact_checker_max_loops: Optional[int] = None
+
+
+# state for the current async context only
+_current_configvar: ContextVar[Optional[PipelineConfig]] = ContextVar(
+    "pipeline_config", default=None
+)
+
+
+def set_config(config_override: PipelineConfig):
+    """Set the configuration for the current request context."""
+    return _current_configvar.set(config_override)
+
+
+def get_config_val(key: str):
+    """
+    Get a configuration value.
+    Prioritizes request-scoped overrides, falls back to DEFAULT_CONFIG.
+    """
+    current = _current_configvar.get()
+    if current is not None:
+        val = getattr(current, key, None)
+        if val is not None:
+            return val
+    return DEFAULT_CONFIG.get(key)
+
+
+# Helpers to access properties
+@property
+def CLASSIFIER_MODEL_NAME():
+    return get_config_val("classifier_model_name")
+
+
+@property
+def FACT_CHECKER_MODEL_NAME():
+    return get_config_val("fact_checker_model_name")
+
+
+@property
+def LAW_RETRIEVER_MODEL_NAME():
+    return get_config_val("law_retriever_model_name")
+
+
+@property
+def EMBEDDING_MODEL_NAME():
+    return get_config_val("embedding_model_name")
+
+
+@property
+def CLASSIFIER_N_SAMPLES():
+    return get_config_val("classifier_n_samples")
+
+
+@property
+def FACT_CHECKER_N_SAMPLES():
+    return get_config_val("fact_checker_n_samples")
+
+
+@property
+def FACT_CHECKER_MAX_LOOPS():
+    return get_config_val("fact_checker_max_loops")

@@ -4,6 +4,8 @@ const searchBtn = document.getElementById("searchBtn");
 const uploadBtn = document.getElementById("uploadBtn");
 const imageInput = document.getElementById("imageInput");
 const imagePreview = document.getElementById("imagePreview");
+const settingsToggleBtn = document.getElementById("settingsToggleBtn");
+const settingsPanel = document.getElementById("settingsPanel");
 const loadingBar = document.getElementById("loadingBar");
 const resultArea = document.getElementById("resultArea");
 const resultContent = document.getElementById("resultContent");
@@ -20,6 +22,7 @@ function setLoading(show) {
   searchBtn.disabled = show;
   searchInput.disabled = show;
   uploadBtn.disabled = show;
+  settingsToggleBtn.disabled = show;
 }
 
 function resetUI() {
@@ -31,6 +34,17 @@ function resetUI() {
 
 // Image handling
 uploadBtn.addEventListener("click", () => imageInput.click());
+
+// Settings toggling
+settingsToggleBtn.addEventListener("click", () => {
+  if (settingsPanel.style.display === "none") {
+    settingsPanel.style.display = "block";
+    settingsToggleBtn.classList.add("active");
+  } else {
+    settingsPanel.style.display = "none";
+    settingsToggleBtn.classList.remove("active");
+  }
+});
 
 imageInput.addEventListener("change", (e) => {
   const file = e.target.files[0];
@@ -209,6 +223,30 @@ async function doAnalyze() {
     formData.append("content", content);
     if (selectedFile) {
       formData.append("image", selectedFile);
+    }
+    
+    // Read config overrides
+    const configData = {};
+    const cfgClassifierModel = document.getElementById('cfgClassifierModel').value.trim();
+    if(cfgClassifierModel) configData.classifier_model_name = cfgClassifierModel;
+    
+    const cfgFactCheckerModel = document.getElementById('cfgFactCheckerModel').value.trim();
+    if(cfgFactCheckerModel) configData.fact_checker_model_name = cfgFactCheckerModel;
+
+    const cfgLawRetrieverModel = document.getElementById('cfgLawRetrieverModel').value.trim();
+    if(cfgLawRetrieverModel) configData.law_retriever_model_name = cfgLawRetrieverModel;
+
+    const cfgFactLoops = document.getElementById('cfgFactLoops').value;
+    if(cfgFactLoops) configData.fact_checker_max_loops = parseInt(cfgFactLoops);
+    
+    const cfgClassifierSamples = document.getElementById('cfgClassifierSamples').value;
+    if(cfgClassifierSamples) configData.classifier_n_samples = parseInt(cfgClassifierSamples);
+    
+    const cfgFactSamples = document.getElementById('cfgFactSamples').value;
+    if(cfgFactSamples) configData.fact_checker_n_samples = parseInt(cfgFactSamples);
+
+    if (Object.keys(configData).length > 0) {
+      formData.append("config", JSON.stringify(configData));
     }
 
     const response = await fetch("/api/analyze", {

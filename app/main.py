@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from pipeline import analyze_content, search_queue
 from pipeline.law_retriever import local_law_retriever
+from config import set_config, PipelineConfig
 
 # Load environment variables from .env file
 load_dotenv()
@@ -17,8 +18,6 @@ app.config.RESPONSE_TIMEOUT = 300
 # Serve the static UI files (HTML, CSS, JS)
 app.static("/static", "./static")
 
-# Initialize OpenAI Async Client pointing to OpenRouter
-# This relies on the openai python SDK which supports custom base URLs
 client = AsyncOpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=os.environ.get("OPENROUTER_API_KEY", "dummy-key-if-not-set"),
@@ -57,13 +56,28 @@ async def analyze_endpoint(request):
                 "bytes": image_file.body,
                 "mime_type": image_file.type,
             }
+
+        config_str = request.form.get("config", "{}")
+        try:
+            config_data = json.loads(config_str)
+        except json.JSONDecodeError:
+            config_data = {}
+
     else:
         data = request.json or {}
         content = data.get("content", "")
         image_data = None
+        config_data = data.get("config", {})
 
     if not content and not image_data:
         return json_response({"error": "Content or image is required"}, status=400)
+
+    if config_data:
+        try:
+            cfg = PipelineConfig(**config_data)
+            set_config(cfg)
+        except Exception as e:
+            print(f"Config parsing warning: {e}")
 
     res = await request.respond(content_type="text/event-stream")
 
@@ -86,7 +100,6 @@ async def analyze_endpoint(request):
         await res.send(f"data: {json.dumps({'type': 'error', 'data': str(e)})}\n\n")
 
     await res.eof()
-
 
 
 if __name__ == "__main__":

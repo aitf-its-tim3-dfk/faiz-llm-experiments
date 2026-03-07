@@ -627,3 +627,69 @@ body::before {
     padding: 0.6rem 1.2rem;
   }
 }
+
+/* ── Settings Panel ── */
+.settings-panel {
+  background: rgba(22, 22, 31, 0.8);
+  border: 1px solid var(--border-input);
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-top: 0.75rem;
+  backdrop-filter: blur(8px);
+  animation: slideDown 0.3s ease forwards;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0.8rem;
+}
+
+.settings-row {
+  display: flex;
+  gap: 1rem;
+}
+
+.settings-row .settings-group {
+  flex: 1;
+}
+
+.settings-panel label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+
+.settings-panel input {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  padding: 0.6rem;
+  font-size: 0.85rem;
+  font-family: inherit;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.settings-panel input:focus {
+  border-color: var(--pink-soft);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.settings-panel input::placeholder {
+  color: var(--text-muted);
+}
+
+.icon-btn.active {
+  color: var(--pink-soft);
+  background: var(--pink-glow);
+}

@@ -6,10 +6,7 @@ from openai import AsyncOpenAI
 from sentence_transformers import SentenceTransformer
 
 from .prompts import LAW_QUERY_PROMPT, LAW_SUMMARY_PROMPT
-
-MODEL_NAME = "qwen/qwen3.5-35b-a3b"
-EMBED_MODEL_NAME = "perplexity-ai/pplx-embed-v1-0.6B"
-
+import config
 
 class LocalLawRetriever:
     def __init__(self, data_dir="data"):
@@ -27,7 +24,7 @@ class LocalLawRetriever:
             return
 
         print("Loading local law index...")
-        self.embed_model = SentenceTransformer(EMBED_MODEL_NAME, trust_remote_code=True)
+        self.embed_model = SentenceTransformer(config.get_config_val("embedding_model_name"), trust_remote_code=True)
 
         with open(
             os.path.join(self.data_dir, "law_metadata.json"), "r", encoding="utf-8"
@@ -112,7 +109,7 @@ async def retrieve_laws(
 
     try:
         res = await client.chat.completions.create(
-            model=MODEL_NAME,
+            model=config.get_config_val("law_retriever_model_name"),
             messages=[
                 {"role": "system", "content": LAW_QUERY_PROMPT},
                 {
@@ -169,7 +166,7 @@ async def retrieve_laws(
 
     try:
         final_res = await client.chat.completions.create(
-            model=MODEL_NAME,
+            model=config.get_config_val("law_retriever_model_name"),
             messages=[
                 {"role": "system", "content": LAW_SUMMARY_PROMPT},
                 {
