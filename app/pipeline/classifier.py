@@ -1,7 +1,7 @@
 import json
 import asyncio
 import base64
-from typing import List, Dict, Optional, Callable
+from typing import List, Dict, Optional, Callable, Tuple
 from openai import AsyncOpenAI
 from .prompts import CLASSIFY_PROMPT
 import config
@@ -9,7 +9,7 @@ import config
 
 async def _classify_single(
     client: AsyncOpenAI, content: str, image_data: Optional[Dict] = None
-) -> List[str]:
+) -> Tuple[List[str], bool]:
     user_message_content = [{"type": "text", "text": content}]
     if image_data:
         # Construct base64 data URI
@@ -35,15 +35,17 @@ async def _classify_single(
                         "schema": {
                             "type": "object",
                             "properties": {
-                                "categories": {"type": "array", "items": {"type": "string"}}
+                                "categories": {"type": "array", "items": {"type": "string"}},
+                                "needs_verification": {"type": "boolean"}
                             },
-                            "required": ["categories"],
+                            "required": ["categories", "needs_verification"],
                             "additionalProperties": False,
                         },
                     },
                 },
                 temperature=0.7,
                 max_completion_tokens=config.get_config_val("max_completion_tokens"),
+                **config.get_llm_kwargs("classifier"),
             )
 
             content_str = response.choices[0].message.content
@@ -55,11 +57,11 @@ async def _classify_single(
             
             reply = content_str.strip()
             data = json.loads(reply)
-            return data.get("categories", [])
+            return data.get("categories", []), data.get("needs_verification", False)
         except Exception as e:
             print(f"Classification attempt {attempt+1} error: {e}")
             if attempt == 2:
-                return []
+                return [], False
             await asyncio.sleep(1)
 
 
@@ -68,7 +70,7 @@ async def classify_content(
     content: str,
     image_data: Optional[Dict] = None,
     emit_progress: Optional[Callable] = None,
-) -> List[str]:
+) -> Tuple[List[str], bool]:
     """Runs classification N times and takes the majority vote for categories."""
     results = []
 
@@ -98,29 +100,33 @@ async def classify_content(
         results = await asyncio.gather(*tasks)
 
     category_counts = {}
+    verification_votes = 0
+    
     for res in results:
-        for cat in set(res):
+        cats, needs_v = res
+        for cat in set(cats):
             category_counts[cat] = category_counts.get(cat, 0) + 1
+        if needs_v:
+            verification_votes += 1
 
     threshold = n_samples // 2 + 1
     final_categories = [
         cat for cat, count in category_counts.items() if count >= threshold
     ]
+    final_needs_verification = verification_votes >= threshold
 
     allowed = {
         "Provokasi",
         "SARA",
         "Separatisme",
-        "Disinformasi",
         "Ujaran Kebencian",
-        "Hoaks",
         "Penghinaan",
         "Makar",
         "Ancaman",
         "Pelanggaran Keamanan Informasi",
         "Kekerasan",
         "Penistaan Agama",
-        "Misinformasi",
     }
 
-    return [c for c in final_categories if c in allowed]
+    return [c for c in final_categories if c in allowed], final_needs_verification
+

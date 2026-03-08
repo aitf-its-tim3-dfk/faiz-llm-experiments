@@ -1,27 +1,27 @@
 # Prompts for the agentic content moderation pipeline
 
 CLASSIFY_PROMPT = """You are an expert Indonesian content moderator.
-Your task is to analyze the user's content (which may include text and/or an image) and classify it into one or more of the following 13 categories if applicable:
+Your task is to analyze the user's content (which may include text and/or an image) and classify it into one or more of the following 10 categories if applicable:
 1. Provokasi (Provocation)
 2. SARA (Ethnicity, Religion, Race, and Inter-group relations)
 3. Separatisme (Separatism)
-4. Disinformasi (Disinformation)
-5. Ujaran Kebencian (Hate Speech)
-6. Hoaks (Hoax)
-7. Penghinaan (Insult/Defamation)
-8. Makar (Treason)
-9. Ancaman (Threat)
-10. Pelanggaran Keamanan Informasi (Information Security Breach)
-11. Kekerasan (Violence)
-12. Penistaan Agama (Blasphemy)
-13. Misinformasi (Misinformation)
+4. Ujaran Kebencian (Hate Speech)
+5. Penghinaan (Insult/Defamation)
+6. Makar (Treason)
+7. Ancaman (Threat)
+8. Pelanggaran Keamanan Informasi (Information Security Breach)
+9. Kekerasan (Violence)
+10. Penistaan Agama (Blasphemy)
 
 Analyze both the text and any visual information provided in the image together.
+Additionally, you must determine if the content makes a factual claim that should be verified against real-world evidence. If the content contains claims about events, statistics, science, or news that could potentially be false, respond with `needs_verification`: true. If it is purely opinion, insult, or subjective without testable claims, respond with false.
+
 Return your results in the following JSON format:
 {
-  "categories": ["Category 1", "Category 2"]
+  "categories": ["Category 1", "Category 2"],
+  "needs_verification": true/false
 }
-If the content does not fall into any of these categories, return an empty array [].
+If the content does not fall into any of these categories, return an empty array [] for categories.
 Do not include any other text or reasoning.
 """
 
@@ -50,9 +50,9 @@ Return your results in the following JSON format:
 }
 """
 
-FACT_CHECK_QUERY_PROMPT = """You are an expert fact-checker.
-The user has provided a claim that was flagged as Disinformasi or Hoaks.
-Identify the core verifiable facts or entities in the claim and formulate a short, effective search query to verify or debunk the claim.
+FACT_CHECK_STANDARD_QUERY_PROMPT = """You are an expert fact-checker.
+The user has provided a claim that needs to be verified.
+Identify the core verifiable facts or entities in the claim and formulate a short, effective search query to verify the claim.
 
 Return your results in the following JSON format:
 {
@@ -60,18 +60,39 @@ Return your results in the following JSON format:
 }
 """
 
+FACT_CHECK_CONTRARY_QUERY_PROMPT = """You are an expert fact-checker.
+The user has provided a claim that needs to be verified.
+Identify the core verifiable facts or entities in the claim and formulate a short, effective search query to find facts on the contrary or known debunkings (e.g., adding keywords like "hoaks", "fakta sebenarnya", "klarifikasi").
+
+Return your results in the following JSON format:
+{
+  "query": "the search query here"
+}
+"""
+
+PURE_REASONING_PROMPT = """You are an expert fact-checker.
+The user has provided a claim. Without using any external search, evaluate the likelihood of this claim being factual based entirely on your internal knowledge and logical reasoning.
+You must provide a factuality score from 0 to 100, where 0 means completely false/illogical/debunked, and 100 means completely true/factual.
+
+Return your analysis in the following JSON format ONLY:
+{
+  "factuality_score": 0-100,
+  "reasoning": "Brief explanation of your reasoning"
+}
+"""
+
 # SUFFICIENCY_PROMPT stays the same as it already has a JSON structure defined
 SUFFICIENCY_PROMPT = """You are an expert fact-checker.
 Review the original claim and the provided search results to determine if there is sufficient evidence to verify or debunk the claim.
 Consider the source's reliability and how directly it addresses the claim.
+You must provide a factuality score from 0 to 100, where 0 means the claim is completely false/debunked by the evidence, and 100 means the claim is completely true/supported by the evidence. If the evidence is completely unrelated or insufficient to make ANY judgment, the score can be around 50, but you should set sufficient_evidence to false.
 
 Return your analysis in the following JSON format ONLY:
 {
-  "sufficient": true/false,
-  "verified": true/false/null,
+  "sufficient_evidence": true/false,
+  "factuality_score": 0-100,
   "reasoning": "Brief explanation of your conclusion"
 }
-"verified" should be true if the claim is factual, false if it is a hoax/false, and null if sufficient is false.
 """
 
 REFINED_QUERY_PROMPT = """You are an expert fact-checker trying to verify a claim.
@@ -84,28 +105,38 @@ Return your results in the following JSON format:
 """
 
 LAW_TEXT_ANALYZER_PROMPT = """You are an expert Indonesian law moderator.
-The user has provided a piece of text and a specific Indonesian law that it violated.
-Identify the specific segment(s) of the text that trigger this law, and explain why.
+The user has provided a piece of text and a specific Indonesian law.
+Determine if the text actually violates the law. If it does not, return `is_violation` as false and explain why in `overall_reason`. If it does, return `is_violation` as true, identify the specific segment(s) of the text that trigger this law, and explain why.
 
 Return your results in the following JSON format ONLY:
 {
+  "is_violation": true/false,
   "segments": [
     {
       "text": "Exact quote from the user's text",
       "reason": "Why this segment violates the law"
     }
   ],
-  "overall_reason": "Summary of why the law applies to this text"
+  "overall_reason": "Summary of why the law applies (or does not apply) to this text"
 }
 """
 
-LAW_IMAGE_ANALYZER_PROMPT = """You are an expert Indonesian law moderator.
-The user has provided content (which includes an image) and a specific Indonesian law that it violated.
-Explain exactly why the image violates this law.
+LAW_MULTIMODAL_ANALYZER_PROMPT = """You are an expert Indonesian law moderator.
+The user has provided content (which may include text, an image, or both) and a specific Indonesian law. They may also provide fact-checking context if the content contains factual claims.
+Determine if the content actually violates the law. 
+If it does not, return `is_violation` as false and explain why. 
+If it does, return `is_violation` as true. Explain exactly why the content violates this law. If there is text, identify the specific segment(s) of the text that trigger this law.
 
 Return your results in the following JSON format ONLY:
 {
-  "reason": "Explanation of why the image violates the law"
+  "is_violation": true/false,
+  "segments": [
+    {
+      "text": "Exact quote from the user's text (if applicable)",
+      "reason": "Why this segment violates the law"
+    }
+  ],
+  "reason": "Overall explanation of why the content violates (or does not violate) the law"
 }
 """
 
@@ -130,3 +161,28 @@ Return your results in the following JSON format ONLY:
   "reason": "Final conclusive explanation"
 }
 """
+
+INTENTION_CHECK_PROMPT = """You are an expert content analyst.
+The user has provided a claim that has been verified to be FALSE or a HOAX.
+Your task is to analyze the content and determine if there is a clear intention to mislead, deceive, manipulate public opinion, or cause harm (e.g., political manipulation, scam, intentional inciting of panic). 
+If there is such manipulative intent, it is classified as "Disinformasi".
+If it appears to be a mere fabrication, prank, or false claim without a deeper malicious agenda, it is classified as "Hoaks".
+
+Return your results in the following JSON format ONLY:
+{
+  "has_malicious_intent": true/false,
+  "category": "Disinformasi" or "Hoaks",
+  "reasoning": "Brief explanation of the intent analysis"
+}
+"""
+
+PIPELINE_SUMMARY_PROMPT = """You are an expert content policy enforcer.
+You are given the final results of a content moderation pipeline, which may include identified categories, fact-checking results, and relevant laws violated.
+Your task is to write a cohesive, overarching final summary explaining the verdict in Indonesian. Why was this content flagged? Synthesize the fact-checking results (if any) and the legal context into a clear, concise paragraph. Focus on the core reason it is not safe.
+
+Return your results in the following JSON format ONLY:
+{
+  "final_summary": "Your overarching final summary here"
+}
+"""
+

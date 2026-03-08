@@ -137,6 +137,7 @@ async def retrieve_laws(
                 },
                 temperature=0.1,
                 max_completion_tokens=config.get_config_val("max_completion_tokens"),
+                **config.get_llm_kwargs("law_retriever"),
             )
             content_str = res.choices[0].message.content
             if config.get_config_val("verbose_logging"):
@@ -222,6 +223,7 @@ async def retrieve_laws(
                 },
                 temperature=0.2,
                 max_completion_tokens=config.get_config_val("max_completion_tokens"),
+                **config.get_llm_kwargs("law_retriever"),
             )
             content_str = final_res.choices[0].message.content
             if config.get_config_val("verbose_logging"):

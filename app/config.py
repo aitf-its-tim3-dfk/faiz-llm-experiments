@@ -4,17 +4,18 @@ from pydantic import BaseModel
 from typing import Optional
 
 # Base Configuration
-GLOBAL_MODEL_NAME = "qwen/qwen3.5-35b-a3b"
+GLOBAL_MODEL_NAME = "qwen/qwen3.5-122b-a10b"
 
 DEFAULT_CONFIG = {
     "classifier_model_name": GLOBAL_MODEL_NAME,
     "fact_checker_model_name": GLOBAL_MODEL_NAME,
     "law_retriever_model_name": GLOBAL_MODEL_NAME,
     "embedding_model_name": "perplexity-ai/pplx-embed-v1-0.6B",
-    "classifier_n_samples": 3,
-    "fact_checker_n_samples": 3,
+    "classifier_n_samples": 5,
+    "fact_checker_n_samples": 5,
     "fact_checker_max_loops": 3,
-    "max_completion_tokens": 1024,
+    "max_completion_tokens": 2048,
+    "reasoning_effort": "medium",
     "verbose_logging": os.getenv("VERBOSE_LOGGING", "false").lower() == "true",
 }
 
@@ -30,6 +31,10 @@ class PipelineConfig(BaseModel):
     fact_checker_n_samples: Optional[int] = None
     fact_checker_max_loops: Optional[int] = None
     max_completion_tokens: Optional[int] = None
+    reasoning_effort: Optional[str] = None
+    classifier_reasoning_effort: Optional[str] = None
+    fact_checker_reasoning_effort: Optional[str] = None
+    law_retriever_reasoning_effort: Optional[str] = None
     verbose_logging: Optional[bool] = None
 
 
@@ -96,3 +101,19 @@ def FACT_CHECKER_MAX_LOOPS():
 @property
 def MAX_COMPLETION_TOKENS():
     return get_config_val("max_completion_tokens")
+
+
+def get_llm_kwargs(component: str = None) -> dict:
+    """Returns extra kwargs for LLM API calls based on config."""
+    kwargs = {}
+
+    effort = None
+    if component:
+        effort = get_config_val(f"{component}_reasoning_effort")
+    if not effort:
+        effort = get_config_val("reasoning_effort")
+
+    if effort:
+        kwargs["reasoning_effort"] = effort
+
+    return kwargs

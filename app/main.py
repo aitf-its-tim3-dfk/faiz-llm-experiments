@@ -13,7 +13,8 @@ from config import set_config, PipelineConfig
 load_dotenv()
 
 app = Sanic("OpenRouterApp")
-app.config.RESPONSE_TIMEOUT = 300
+app.config.RESPONSE_TIMEOUT = 900
+app.config.KEEP_ALIVE_TIMEOUT = 900
 
 # Serve the static UI files (HTML, CSS, JS)
 app.static("/static", "./static")
@@ -47,7 +48,10 @@ async def index(request):
 async def analyze_endpoint(request):
     """Receives content from UI, runs the moderation pipeline, and streams back progress."""
     # Support both JSON and Multipart Form Data
-    if request.content_type.startswith("multipart/form-data"):
+    content_type = request.content_type or ""
+    if content_type.startswith("multipart/form-data") or content_type.startswith(
+        "application/x-www-form-urlencoded"
+    ):
         content = request.form.get("content", "")
         image_file = request.files.get("image")
         image_data = None
@@ -64,7 +68,10 @@ async def analyze_endpoint(request):
             config_data = {}
 
     else:
-        data = request.json or {}
+        try:
+            data = request.json or {}
+        except Exception:
+            data = {}
         content = data.get("content", "")
         image_data = None
         config_data = data.get("config", {})

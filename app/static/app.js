@@ -111,6 +111,22 @@ function renderFinalResult(data) {
   header.appendChild(badgesContainer);
   card.appendChild(header);
 
+  // Final Summary Section (If any)
+  if (data.final_summary) {
+    const title = document.createElement("div");
+    title.className = "result-section-title";
+    title.textContent = "Ringkasan Eksekutif";
+    card.appendChild(title);
+
+    const panel = document.createElement("div");
+    panel.style.padding = "1rem";
+    panel.style.backgroundColor = "rgba(100, 116, 139, 0.05)";
+    panel.style.borderRadius = "0.75rem";
+    panel.style.marginBottom = "1.5rem";
+    panel.innerHTML = `<p>${processMarkdown(data.final_summary)}</p>`;
+    card.appendChild(panel);
+  }
+
   // Analyzed Text Section with Highlights
   const contentInput = document.getElementById("searchInput").value.trim();
   if (contentInput && data.law_analysis && data.law_analysis.length > 0) {

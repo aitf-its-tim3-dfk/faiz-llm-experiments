@@ -58,7 +58,7 @@ class RetrievalQueue:
         self, client: httpx.AsyncClient, query: str
     ) -> List[Dict]:
         encoded_query = urllib.parse.quote(query)
-        url = f"https://4get.canine.tools/api/v1/web?s={encoded_query}&scraper=google&nsfw=yes"
+        url = f"https://4get.canine.tools/api/v1/web?s={encoded_query}&scraper=ddg&nsfw=yes&country=id-en"
 
         response = await client.get(url)
         response.raise_for_status()

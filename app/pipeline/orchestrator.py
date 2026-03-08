@@ -9,6 +9,57 @@ from .law_retriever import retrieve_laws
 from .fact_checker import fact_check
 from .retrieval import RetrievalQueue, search_queue
 
+async def generate_final_summary(client: AsyncOpenAI, user_content: str, pipeline_result: Dict[str, Any]) -> str:
+    from .prompts import PIPELINE_SUMMARY_PROMPT
+    import config
+    
+    # We want to exclude base64 or heavy items if any, but our result dict is fairly clean.
+    # We can just serialize the result dict.
+    clean_result = {k: v for k, v in pipeline_result.items() if k != "image_data"}
+    
+    context = f"User Content:\n{user_content}\n\nPipeline Results:\n{json.dumps(clean_result, indent=2, ensure_ascii=False)}"
+    
+    for attempt in range(3):
+        try:
+            res = await client.chat.completions.create(
+                model=config.get_config_val("law_retriever_model_name"),
+                messages=[
+                    {"role": "system", "content": PIPELINE_SUMMARY_PROMPT},
+                    {"role": "user", "content": context},
+                ],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "pipeline_final_summary",
+                        "strict": True,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "final_summary": {"type": "string"}
+                            },
+                            "required": ["final_summary"],
+                            "additionalProperties": False
+                        }
+                    }
+                },
+                temperature=0.3,
+                max_completion_tokens=config.get_config_val("max_completion_tokens"),
+                **config.get_llm_kwargs("law_retriever"),
+            )
+            content_str = res.choices[0].message.content
+            if config.get_config_val("verbose_logging"):
+                print(f"[VERBOSE - Final Summary] LLM Response: {content_str}")
+            
+            if content_str is None:
+                raise ValueError("Model returned None content")
+                
+            data = json.loads(content_str.strip())
+            return data.get("final_summary", "Tidak ada ringkasan yang dihasilkan.")
+        except Exception as e:
+            print(f"Final summary attempt {attempt+1} error: {e}")
+            await asyncio.sleep(1)
+            
+    return "Gagal menyusun ringkasan akhir."
 
 async def analyze_content(
     client: AsyncOpenAI,
@@ -33,81 +84,87 @@ async def analyze_content(
                 {"stage": "classifying", "message": "Menganalisis konten..."}
             )
 
-        categories = await classify_content(
+        categories, needs_verification = await classify_content(
             client, content, image_data=image_data, emit_progress=emit_progress
         )
-        result["categories"] = categories
 
-        if not categories:
+        if not categories and not needs_verification:
             if emit_progress:
                 await emit_progress({"stage": "done", "message": "Selesai: Aman."})
             return result
 
         result["is_flagged"] = True
 
-        # Step 2: Parallelized Law Retrieval and Fact-Checking
-        if emit_progress:
-            await emit_progress(
-                {
-                    "stage": "processing",
-                    "message": f"Terdeteksi: {', '.join(categories)}. Mengumpulkan bukti...",
-                }
-            )
+        # Step 2: Fact-Checking & Intention (if needed)
+        if needs_verification:
+            if emit_progress:
+                await emit_progress(
+                    {"stage": "fact_checking", "message": "Klaim faktual terdeteksi. Memulai verifikasi fakta..."}
+                )
 
-        async def process_laws():
-            laws_data = await retrieve_laws(
-                client, content, categories, emit_progress=emit_progress
-            )
-            summary = laws_data.get("summary", "")
-            articles = laws_data.get("articles", [])
-            
-            analyzed_laws = []
-            if articles:
-                if image_data:
-                    from .law_analyzer import analyze_image_laws
-                    analyzed_laws = await analyze_image_laws(client, content, image_data, articles, emit_progress)
-                else:
-                    from .law_analyzer import analyze_text_laws
-                    analyzed_laws = await analyze_text_laws(client, content, articles, emit_progress)
-                    
-            return {
-                "summary": summary,
-                "analysis": analyzed_laws
-            }
-
-        task_laws = asyncio.create_task(process_laws())
-
-        # Only fact-check if Disinformasi or Hoaks
-        needs_fact_check = "Disinformasi" in categories or "Hoaks" in categories
-
-        if needs_fact_check:
-            # We wrap emit_progress to only pass string messages to the fact checker
             async def fc_progress(msg: str):
                 if emit_progress:
                     await emit_progress({"stage": "fact_checking", "message": msg})
 
-            task_fact = fact_check(client, content, search_queue, fc_progress)
-
-            fc_result = await task_fact
-            laws_result = await task_laws
-
-            result["laws_summary"] = laws_result["summary"]
-            result["law_analysis"] = laws_result["analysis"]
+            fc_result = await fact_check(client, content, search_queue, fc_progress)
             result["fact_check"] = fc_result
-
-            # Fallback to Misinformasi if we can't verify (counterfactuals not found)
-            if fc_result and fc_result.get("verified") is None:
-                categories = [
-                    c for c in categories if c not in ("Hoaks", "Disinformasi")
-                ]
+            
+            status = fc_result.get("status")
+            if status == "FALSE":
+                # Check Intention
+                from .intention_checker import check_intention
+                intent_cat = await check_intention(client, content, fc_result.get("reasoning", ""), fc_progress)
+                if intent_cat not in categories:
+                    categories.append(intent_cat)
+            elif status == "UNVERIFIED":
                 if "Misinformasi" not in categories:
                     categories.append("Misinformasi")
-                result["categories"] = categories
-        else:
-            # Only await laws
-            laws_result = await task_laws
-            result["laws_summary"] = laws_result["summary"]
-            result["law_analysis"] = laws_result["analysis"]
+            # If TRUE, we don't add any misinformation categories.
+            
+        result["categories"] = categories
+
+        # Double check if categories is actually empty after fact check
+        if not categories:
+            if emit_progress:
+                await emit_progress({"stage": "done", "message": "Selesai: Fakta terverifikasi, konten aman."})
+            result["is_flagged"] = False
+            return result
+
+        # Step 3: Law Retrieval
+        if emit_progress:
+            await emit_progress(
+                {
+                    "stage": "processing",
+                    "message": f"Kategori final: {', '.join(categories)}. Mengumpulkan dasar hukum...",
+                }
+            )
+
+        laws_data = await retrieve_laws(
+            client, content, categories, emit_progress=emit_progress
+        )
+        summary = laws_data.get("summary", "")
+        articles = laws_data.get("articles", [])
+        
+        analyzed_laws = []
+        if articles:
+            from .law_analyzer import analyze_multimodal_laws
+            analyzed_laws = await analyze_multimodal_laws(
+                client, 
+                content, 
+                articles, 
+                emit_progress, 
+                image_data=image_data, 
+                fact_check_result=result.get("fact_check")
+            )
+                
+        result["laws_summary"] = summary
+        result["law_analysis"] = analyzed_laws
+
+        if emit_progress:
+            await emit_progress({"stage": "processing", "message": "Menyusun ringkasan akhir..."})
+
+        final_summary = await generate_final_summary(client, content, result)
+        result["final_summary"] = final_summary
 
         if emit_progress:
             await emit_progress({"stage": "done", "message": "Analisis selesai."})

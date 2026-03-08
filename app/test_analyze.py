@@ -4,29 +4,30 @@ import asyncio
 import subprocess
 import time
 import sys
+import os
 
 
 async def test():
     async with httpx.AsyncClient(timeout=300.0) as client:
         # Hit the actual server we just started
-        content = "Ini berita hoaks! Uang Rp 100 ribu di dalamnya ada microchip yang bisa melacak kita!"
+        content = "Uang Rp 100 ribu di dalamnya ada microchip yang bisa melacak kita!"
         print(f"Testing point /api/analyze (Multipart) with content:\n{content}\n")
 
-        # Test with just text (multipart) and a custom config abstraction 
+        # Test with just text (multipart) and a custom config abstraction
         # (e.g. fewer fact-check loops for a faster ablation test)
         custom_config = {
-            "fact_checker_max_loops": 1, 
-            "classifier_model_name": "qwen/qwen3.5-35b-a3b"
+            "fact_checker_max_loops": 1,
+            "classifier_model_name": "qwen/qwen3.5-35b-a3b",
         }
-        
+
         async with client.stream(
             "POST",
             "http://127.0.0.1:8000/api/analyze",
-            data={
-                "content": content,
-                "config": json.dumps(custom_config)
-            },
+            json={"content": content, "config": custom_config},
         ) as response:
+            print(f"Status Code: {response.status_code}")
+            if response.status_code != 200:
+                print(f"Error Response: {await response.aread()}")
             async for line in response.aiter_lines():
                 if line.startswith("data: "):
                     try:
@@ -36,7 +37,11 @@ async def test():
                             print(f"[PROGRESS] [{stage}] {payload['data']['message']}")
                         elif payload["type"] == "result":
                             print("\n[FINAL RESULT]")
-                            print(json.dumps(payload["data"], indent=2, ensure_ascii=False))
+                            print(
+                                json.dumps(
+                                    payload["data"], indent=2, ensure_ascii=False
+                                )
+                            )
                         elif payload["type"] == "error":
                             print("\n[ERROR]")
                             print(payload["data"])
@@ -47,15 +52,20 @@ async def test():
 if __name__ == "__main__":
     print("Starting Sanic server in the background...")
     # Start the server using the active Python environment
-    server_process = subprocess.Popen(
-        [sys.executable, "main.py"],
-        cwd="c:/Users/kek/projects/faiz-llm-experiments/app"
+    venv_python = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), ".venv", "Scripts", "python.exe"
     )
-    
+    if not os.path.exists(venv_python):
+        venv_python = sys.executable
+
+    server_process = subprocess.Popen(
+        [venv_python, "main.py"], cwd="c:/Users/kek/projects/faiz-llm-experiments/app"
+    )
+
     try:
         print("Waiting for server to become ready...")
         # Poll the server until it's ready
-        max_retries = 30
+        max_retries = 90
         for i in range(max_retries):
             try:
                 # Just hit the root endpoint to check if it's up
@@ -75,4 +85,3 @@ if __name__ == "__main__":
         print("\nStopping Sanic server...")
         server_process.terminate()
         server_process.wait()
-
