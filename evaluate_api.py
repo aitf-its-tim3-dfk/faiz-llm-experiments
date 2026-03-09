@@ -77,11 +77,24 @@ async def process_all_requests(df):
     async with aiohttp.ClientSession() as session:
         tasks = []
         for idx, row in df.iterrows():
-            img_rel_path = row.get("Screen Capture Path", "")
-            img_path = os.path.join("sample", img_rel_path) if "sample" not in img_rel_path else img_rel_path
+            # Normalize path separators for cross-platform support (Colab is Linux)
+            img_rel_path = str(row.get("Screen Capture Path", "")).replace("\\", "/")
+            file_name = img_rel_path.split("/")[-1]
             
-            if not os.path.exists(img_path):
-                img_path = os.path.join("sample", "extracted_stuff", os.path.basename(img_rel_path))
+            # Try multiple potential locations where the uploaded image might be
+            possible_paths = [
+                img_rel_path,
+                os.path.join("sample", img_rel_path),
+                os.path.join("sample", "extracted_stuff", file_name),
+                os.path.join("extracted_stuff", file_name),
+                file_name
+            ]
+            
+            img_path = img_rel_path # Default fallback
+            for p in possible_paths:
+                if os.path.exists(p):
+                    img_path = p
+                    break
             
             tasks.append(sem_task(session, img_path, idx))
             
