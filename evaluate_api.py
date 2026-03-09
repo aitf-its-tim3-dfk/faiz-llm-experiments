@@ -92,13 +92,14 @@ async def process_all_requests(df):
     # We will limit concurrency to avoid overwhelming the local server or API
     semaphore = asyncio.Semaphore(5)
 
-    async def sem_task(session, img_path, idx):
+    async def sem_task(session, img_path, storage_idx, logging_idx):
         async with semaphore:
-            return await get_api_result_async(session, img_path, idx)
+            _, result = await get_api_result_async(session, img_path, logging_idx)
+            return storage_idx, result
 
     async with aiohttp.ClientSession() as session:
         tasks = []
-        for idx, row in df.iterrows():
+        for i, (idx, row) in enumerate(df.iterrows()):
             # Normalize path separators for cross-platform support (Colab is Linux)
             img_rel_path = ""
             if "image_filename" in row and pd.notna(row["image_filename"]):
@@ -124,13 +125,14 @@ async def process_all_requests(df):
                     img_path = p
                     break
 
-            tasks.append(sem_task(session, img_path, idx))
+            # i is the positional index (0 to len(df)-1), idx is the DataFrame label index
+            tasks.append(sem_task(session, img_path, i, idx))
 
         print(f"Starting {len(tasks)} concurrent API requests (max 5 parallel)...")
         completed_tasks = await asyncio.gather(*tasks)
 
-        for idx, result in completed_tasks:
-            results[idx] = result
+        for pos, result in completed_tasks:
+            results[pos] = result
 
         return results
 
@@ -165,8 +167,8 @@ async def main_async():
     ref_laws = []
     cand_laws = []
 
-    for idx, row in df.iterrows():
-        result = raw_results[idx]
+    for i, (idx, row) in enumerate(df.iterrows()):
+        result = raw_results[i]
         if result is None:
             print(f"[{idx}] Skipping metrics due to failed request.")
             continue
