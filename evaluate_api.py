@@ -16,7 +16,7 @@ def install_deps():
         import aiofiles
     except ImportError:
         print("Installing required dependencies in the current venv...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "pandas", "scikit-learn", "bert-score", "requests", "aiohttp", "aiofiles"])
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "pandas", "scikit-learn", "bert-score", "requests", "aiohttp", "aiofiles", "transformers<4.40.0"])
         print("Dependencies installed successfully.")
 
 install_deps()
@@ -126,6 +126,7 @@ async def main_async():
         
     y_true_cats = []
     y_pred_cats = []
+    y_pred_cats_ranked = []
     
     ref_analysis = []
     cand_analysis = []
@@ -142,8 +143,12 @@ async def main_async():
         gt_cat = str(row.get("Kategori", "")).strip()
         pred_cats = [c.strip() for c in result.get("categories", [])]
         
+        cat_votes = result.get("category_votes", {})
+        pred_cats_ranked = [c.strip() for c in sorted(cat_votes, key=cat_votes.get, reverse=True)]
+        
         y_true_cats.append([gt_cat] if gt_cat else [])
         y_pred_cats.append(pred_cats)
+        y_pred_cats_ranked.append(pred_cats_ranked)
         
         gt_pelanggaran = str(row.get("Analisis Pelanggaran", ""))
         gt_dampak = str(row.get("Analisis Dampak", ""))
@@ -180,6 +185,29 @@ async def main_async():
         
         acc = accuracy_score(y_true_bin, y_pred_bin)
         log_print(f"Exact Match Accuracy: {acc:.4f}\n")
+        
+        top_1_hits, top_3_hits, top_5_hits = 0, 0, 0
+        total_samples = len(y_true_cats)
+        for i in range(total_samples):
+            true_cats_set = set(y_true_cats[i])
+            if not true_cats_set:
+                continue
+                
+            pred_1 = set(y_pred_cats_ranked[i][:1])
+            pred_3 = set(y_pred_cats_ranked[i][:3])
+            pred_5 = set(y_pred_cats_ranked[i][:5])
+            
+            if true_cats_set.intersection(pred_1):
+                top_1_hits += 1
+            if true_cats_set.intersection(pred_3):
+                top_3_hits += 1
+            if true_cats_set.intersection(pred_5):
+                top_5_hits += 1
+                
+        if total_samples > 0:
+            log_print(f"Top-1 Hit Rate: {top_1_hits/total_samples:.4f}")
+            log_print(f"Top-3 Hit Rate: {top_3_hits/total_samples:.4f}")
+            log_print(f"Top-5 Hit Rate: {top_5_hits/total_samples:.4f}\n")
         
         log_print("Classification Report (Micro/Macro averages):")
         report = classification_report(y_true_bin, y_pred_bin, target_names=mlb.classes_, zero_division=0)

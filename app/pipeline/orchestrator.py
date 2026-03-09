@@ -164,9 +164,11 @@ async def analyze_content(
                 {"stage": "classifying", "message": "Menganalisis konten..."}
             )
 
-        categories, needs_verification = await classify_content(
+        categories, needs_verification, category_counts = await classify_content(
             client, content, image_data=image_data, emit_progress=emit_progress
         )
+        
+        result["category_votes"] = category_counts
 
         if not categories and not needs_verification:
             if emit_progress:

@@ -73,7 +73,7 @@ async def classify_content(
     content: str,
     image_data: Optional[Dict] = None,
     emit_progress: Optional[Callable] = None,
-) -> Tuple[List[str], bool]:
+) -> Tuple[List[str], bool, Dict[str, int]]:
     """Runs classification N times and takes the majority vote for categories."""
     results = []
 
@@ -131,4 +131,4 @@ async def classify_content(
         "Penistaan Agama",
     }
 
-    return [c for c in final_categories if c in allowed], final_needs_verification
+    return [c for c in final_categories if c in allowed], final_needs_verification, category_counts
