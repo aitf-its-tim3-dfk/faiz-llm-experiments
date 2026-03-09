@@ -12,10 +12,10 @@ DEFAULT_CONFIG = {
     "law_retriever_model_name": GLOBAL_MODEL_NAME,
     "embedding_model_name": "perplexity-ai/pplx-embed-v1-0.6B",
     "classifier_n_samples": 5,
-    "fact_checker_n_samples": 5,
+    "fact_checker_n_samples": 3,
     "fact_checker_max_loops": 3,
-    "max_completion_tokens": 8192,
-    "reasoning_effort": "medium",
+    "max_completion_tokens": 4096,
+    "reasoning_effort": "low",
     "verbose_logging": os.getenv("VERBOSE_LOGGING", "false").lower() == "true",
 }
 
