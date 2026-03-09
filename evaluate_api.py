@@ -46,6 +46,39 @@ from sklearn.metrics import classification_report, accuracy_score
 from bert_score import score as bert_score_fn
 
 
+def normalize_categories(cat_str):
+    """
+    Normalizes ground truth category strings from the CSV.
+    Handles merged categories like 'Disinformasi & Fitnah' by splitting them.
+    Maps non-canonical names to the classifier's expected categories.
+    """
+    if not cat_str or pd.isna(cat_str) or str(cat_str).lower() == "nan":
+        return []
+
+    # Mapping rules for normalization
+    mapping = {
+        "fitnah": "Penghinaan",
+        "hasutan": "Provokasi",
+    }
+
+    # Split by common delimiters
+    raw_parts = []
+    if "&" in cat_str:
+        raw_parts = [p.strip() for p in cat_str.split("&")]
+    elif "," in cat_str:
+        raw_parts = [p.strip() for p in cat_str.split(",")]
+    else:
+        raw_parts = [cat_str.strip()]
+
+    normalized = []
+    for part in raw_parts:
+        # Apply mapping if part (case-insensitive) matches a key
+        mapped_part = mapping.get(part.lower(), part)
+        normalized.append(mapped_part)
+
+    return list(set(normalized))
+
+
 async def get_api_result_async(session, image_path, idx):
     url = "http://localhost:8000/api/analyze"
 
@@ -178,12 +211,14 @@ async def main_async():
             print(f"[{idx}] Skipping metrics due to failed request.")
             continue
 
-        gt_cat = ""
         if "label" in row and pd.notna(row["label"]):
             gt_cat = str(row["label"]).strip()
         elif "Kategori" in row and pd.notna(row["Kategori"]):
             gt_cat = str(row["Kategori"]).strip()
-        
+
+        # Split and normalize ground truth categories
+        gt_cats_list = normalize_categories(gt_cat)
+
         pred_cats = [c.strip() for c in result.get("categories", [])]
 
         cat_votes = result.get("category_votes", {})
@@ -191,7 +226,7 @@ async def main_async():
             c.strip() for c in sorted(cat_votes, key=cat_votes.get, reverse=True)
         ]
 
-        y_true_cats.append([gt_cat] if gt_cat and gt_cat != "nan" else [])
+        y_true_cats.append(gt_cats_list)
         y_pred_cats.append(pred_cats)
         y_pred_cats_ranked.append(pred_cats_ranked)
 
