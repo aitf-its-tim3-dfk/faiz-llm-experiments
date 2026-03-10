@@ -186,6 +186,21 @@ async def main_async():
     df = pd.read_csv(csv_path)
     print(f"Loaded dataset with {len(df)} rows.")
 
+    # Stratified sampling: ~20 samples per category
+    cat_col = None
+    if "label" in df.columns:
+        cat_col = "label"
+    elif "Kategori" in df.columns:
+        cat_col = "Kategori"
+        
+    if cat_col:
+        # Fill NaNs temporarily for grouping purposes
+        df['temp_stratify'] = df[cat_col].fillna('Unknown')
+        # Sample up to 20 rows per category string
+        df = df.groupby('temp_stratify', group_keys=False).apply(lambda x: x.sample(min(len(x), 20), random_state=42))
+        df = df.drop(columns=['temp_stratify']).reset_index(drop=True)
+        print(f"Stratified sampling applied: {len(df)} rows remaining (max 20 per category).")
+
     # Run all API requests concurrently
     raw_results = await process_all_requests(df)
 
