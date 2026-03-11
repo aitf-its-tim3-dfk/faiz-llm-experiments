@@ -1,5 +1,7 @@
 # **Queeree Pipeline Flow**
 
+> NOTE: The github renderer is kinda funky when rendering this; It's recommended to view this on a VS Code-based Editor.
+
 This document outlines the data flows and logic of the pipeline. It roughly comprehensively-covers the high-level orchestration flow, followed by detailed breakdowns of each internal component. Some parts are simplified down a bit, but considering the complexity of the current codebase, honestly, I think this is comprehensive enough for most purposes.
 
 The design rationale of this pipeline is to be able to be as llm-agnostic as possible while leveraging as much of the available retrieval tooling to assist and augment the capability of whatever model is loaded up. Preferably, we're using a reasoning-trained model for the LLM, but any VLM is compatible with this pipeline and can be swapped out relatively easily within the codebase to support an ensemble of models to handle the two modalities. (e.g., using a VLM for MLLM task, whilst the reasoning and textual ones are handled by a text-only LLM)
